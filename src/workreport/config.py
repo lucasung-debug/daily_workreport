@@ -25,6 +25,7 @@ class CategoryRule(BaseModel):
 
 class Settings(BaseModel):
     # 일반
+    onboarding_done: bool = False
     user_name: str = ""  # 회의록 액션아이템 담당자 매칭용
     work_start: str = "09:00"
     work_end: str = "18:00"

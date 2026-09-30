@@ -1,5 +1,4 @@
 from datetime import datetime
-from types import SimpleNamespace
 
 import anthropic
 import httpx2
