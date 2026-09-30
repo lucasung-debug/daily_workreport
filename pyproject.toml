@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "workreport"
+version = "0.1.0"
+description = "Windows 11 일일 업무일지 · 회의록 자동화"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=1.10",
+    "pydantic>=2.6",
+    "PySide6>=6.6",
+    "psutil>=5.9",
+    "numpy>=1.26",
+    "soundfile>=0.12",
+    "requests>=2.31",
+    "keyring>=24",
+    "mss>=9",
+    "Pillow>=10",
+    "soundcard>=0.4.3; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+whisper = ["faster-whisper>=1.0"]
+dev = ["pytest>=8", "pyinstaller>=6"]
+
+[project.gui-scripts]
+workreport = "workreport.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
