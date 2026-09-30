@@ -202,6 +202,9 @@ class MeetingsView(QWidget):
     # ------------------------------------------------------------ 녹음
     def _update_record_button(self) -> None:
         rec = self.services.recorder
+        if rec.needs_finalize:  # 장치 오류로 녹음이 멈춤 → 지금까지 녹음된 부분을 회의로 등록
+            self.toggle_recording()
+            return
         if rec.is_recording:
             self.btn_record.setText(f"■ 녹음 중지 ({format_hms(rec.elapsed())})")
             self.btn_record.setStyleSheet(f"color: white; background: {RECORDING}; font-weight: 600; padding: 4px 10px;")
@@ -212,7 +215,7 @@ class MeetingsView(QWidget):
     def toggle_recording(self, title_hint: str = "") -> None:
         rec = self.services.recorder
         try:
-            if rec.is_recording:
+            if rec.is_recording or rec.needs_finalize:
                 meeting = self.services.stop_recording()
                 self.status_message.emit(f"녹음을 마쳤습니다. '{meeting.title}' 음성 변환을 시작합니다.")
                 self.recording_changed.emit(False)

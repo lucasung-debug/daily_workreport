@@ -71,7 +71,7 @@ class Bridge(QObject):
 
     meeting_changed = Signal(int)
     activity_changed = Signal()
-    notify = Signal(str, str)
+    notify = Signal(str, str, int)
     meeting_detected = Signal(str)
     recorder_error = Signal(str)
     report_ready = Signal(str)

@@ -25,7 +25,7 @@ from .stt.base import STTError, Transcriber, create_transcriber, transcribe_reco
 
 log = logging.getLogger(__name__)
 
-Notify = Callable[[str, str], None]
+Notify = Callable[[str, str, int], None]  # (제목, 내용, 회의 id)
 
 
 class MeetingPipeline:
@@ -142,7 +142,7 @@ class MeetingPipeline:
 
             if not self.claude.available():
                 self._update(meeting_id, status=MeetingStatus.TRANSCRIBED, progress=1.0, error="Claude API 키가 없어 회의록 요약을 건너뛰었습니다.")
-                self._notify("음성 변환 완료", f"{meeting.title}: 전사문이 준비되었습니다. (회의록 요약은 API 키 설정 후 가능)")
+                self._notify(meeting_id, "음성 변환 완료", f"{meeting.title}: 전사문이 준비되었습니다. (회의록 요약은 API 키 설정 후 가능)")
                 return self.db.get_meeting(meeting_id)
 
             self._update(meeting_id, status=MeetingStatus.SUMMARIZING, error="")
@@ -152,11 +152,11 @@ class MeetingPipeline:
                 fields["title"] = minutes.title
             self.db.replace_action_items(meeting_id, action_items_from(minutes, meeting_id, settings.user_name))
             self._update(meeting_id, **fields)
-            self._notify("회의록 준비 완료", f"{fields.get('title', meeting.title)} 회의록이 작성되었습니다.")
+            self._notify(meeting_id, "회의록 준비 완료", f"{fields.get('title', meeting.title)} 회의록이 작성되었습니다.")
         except (STTError, ClaudeError) as exc:
             log.warning("회의 처리 실패 (id=%s): %s", meeting_id, exc)
             self._update(meeting_id, status=MeetingStatus.ERROR, error=str(exc))
-            self._notify("회의 처리 실패", f"{meeting.title}: {exc}")
+            self._notify(meeting_id, "회의 처리 실패", f"{meeting.title}: {exc}")
         except Exception as exc:
             log.exception("회의 처리 실패 (id=%s)", meeting_id)
             self._update(meeting_id, status=MeetingStatus.ERROR, error=f"처리 중 오류: {exc}")
@@ -181,10 +181,10 @@ class MeetingPipeline:
         self._update(meeting.id, transcript=transcript, status=MeetingStatus.TRANSCRIBED, progress=1.0)
         return transcript
 
-    def _notify(self, title: str, message: str) -> None:
+    def _notify(self, meeting_id: int, title: str, message: str) -> None:
         if self.notify:
             try:
-                self.notify(title, message)
+                self.notify(title, message, meeting_id)
             except Exception:
                 log.exception("알림 실패")
 

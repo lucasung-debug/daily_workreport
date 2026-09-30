@@ -125,9 +125,8 @@ class Application:
             on_click=lambda: None if self.services.recorder.is_recording else self.toggle_recording(title_hint),
         )
 
-    def _on_pipeline_notify(self, title: str, message: str) -> None:
-        meeting_id = self.services.pipeline.current
-        self.tray.notify(title, message, on_click=(lambda: self.window.open_meeting(meeting_id)) if meeting_id else self.window.bring_to_front)
+    def _on_pipeline_notify(self, title: str, message: str, meeting_id: int) -> None:
+        self.tray.notify(title, message, on_click=lambda: self.window.open_meeting(meeting_id))
 
     def auto_draft(self, day: str, manual: bool = False) -> None:
         def done(_report) -> None:

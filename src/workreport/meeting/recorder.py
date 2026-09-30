@@ -113,6 +113,11 @@ class MeetingRecorder:
     def is_recording(self) -> bool:
         return self._writer is not None and self._writer.is_alive()
 
+    @property
+    def needs_finalize(self) -> bool:
+        """장치 오류 등으로 녹음이 스스로 끝났지만 아직 stop() 으로 마무리하지 않은 상태."""
+        return self._writer is not None and not self._writer.is_alive()
+
     def elapsed(self) -> float:
         return self._clock() - self.started_at if self.started_at and self.is_recording else 0.0
 

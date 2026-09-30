@@ -242,7 +242,7 @@ def make_pipeline(db, client=None, transcriber=None, settings=None, configured=T
     client = client or FakeClient(default=parsed(minutes()))
     claude = ClaudeService(lambda: s, client_factory=lambda: client, configured=lambda: configured)
     notes = []
-    pipe = MeetingPipeline(db, lambda: s, claude, transcriber_factory=lambda _s: transcriber or FakeTranscriber(), notify=lambda t, m: notes.append((t, m)))
+    pipe = MeetingPipeline(db, lambda: s, claude, transcriber_factory=lambda _s: transcriber or FakeTranscriber(), notify=lambda t, m, mid: notes.append((t, m, mid)))
     return pipe, client, notes
 
 
@@ -328,3 +328,20 @@ def test_cleanup_only_removes_own_old_recordings(db, tmp_path):
     assert pipe.cleanup_old_audio() == 1
     assert not own.exists() and user_file.exists()
     assert db.get_meeting(m_own).audio_path == "" and db.get_meeting(m_user).audio_path == str(user_file)
+
+
+class DeadBackend(FakeBackend):
+    def loopback(self, name=""):
+        return FakeSource(0.2, fail=True)
+
+
+def test_recorder_all_devices_fail_needs_finalize(db, tmp_path):
+    rec = MeetingRecorder(lambda: Settings(), backend=DeadBackend(mic_fail=True))
+    rec.start()
+    deadline = time.time() + 3
+    while time.time() < deadline and not rec.needs_finalize:
+        time.sleep(0.05)
+    assert rec.needs_finalize and not rec.is_recording
+    path, _, _ = rec.stop()
+    assert path.exists() and not rec.needs_finalize
+    assert "no device" in rec.error

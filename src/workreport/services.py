@@ -82,7 +82,7 @@ class Services:
         self.detector.start()
 
     def stop(self) -> None:
-        if self.recorder.is_recording:
+        if self.recorder.is_recording or self.recorder.needs_finalize:
             try:
                 self.stop_recording()
             except Exception:
