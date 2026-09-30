@@ -414,6 +414,10 @@ class Database:
     def is_processed(self, path: str) -> bool:
         return self._one("SELECT 1 FROM processed_files WHERE path=?", (path,)) is not None
 
+    def processed_by_signature(self, size: int, mtime: float) -> tuple[str, int | None] | None:
+        r = self._one("SELECT path, meeting_id FROM processed_files WHERE size=? AND mtime=?", (size, mtime))
+        return (r["path"], r["meeting_id"]) if r else None
+
     def mark_processed(self, path: str, size: int, mtime: float, meeting_id: int | None) -> None:
         self._exec(
             "INSERT OR REPLACE INTO processed_files(path, size, mtime, meeting_id) VALUES (?,?,?,?)",

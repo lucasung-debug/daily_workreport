@@ -50,9 +50,10 @@ class Settings(BaseModel):
     # 회의
     recorder_watch_enabled: bool = True
     recorder_dir: str = ""  # 비어 있으면 문서\Sound Recordings 자동 탐지
+    recorder_watch_since: float = 0.0  # 이 시각 이후의 녹음만 가져온다(처음 켤 때 자동 설정)
     meeting_detect_enabled: bool = True
     meeting_apps: list[str] = Field(
-        default_factory=lambda: ["ms-teams.exe", "Teams.exe", "Zoom.exe", "CiscoWebexMeetings", "webex", "Google Meet", "Slack 허들", "Huddle"]
+        default_factory=lambda: ["Teams", "Zoom", "Webex", "Google Meet", "Meet -", "Meet –", "Slack", "Discord"]
     )
     record_mic_device: str = ""  # 비어 있으면 기본 마이크
     record_speaker_device: str = ""  # 비어 있으면 기본 스피커(루프백)
