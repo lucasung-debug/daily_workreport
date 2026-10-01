@@ -35,8 +35,9 @@ jobs:
         env:
           WORKREPORT_PYTHON: python
         run: |
-          call scripts\install_from_source.bat --no-launch --no-shortcut || exit /b 1
+          call scripts\install_from_source.bat --no-launch || exit /b 1
           .venv\Scripts\python.exe -c "import workreport, PySide6, faster_whisper; print('workreport', workreport.__version__)" || exit /b 1
+          powershell -NoProfile -Command "$l=[Environment]::GetFolderPath('Desktop')+'\WorkReport.lnk'; if (-not (Test-Path $l)) { Write-Error 'no shortcut'; exit 1 }; $s=(New-Object -ComObject WScript.Shell).CreateShortcut($l); Write-Host $s.TargetPath $s.Arguments; if (-not (Test-Path $s.TargetPath)) { exit 1 }" || exit /b 1
 
   build-exe:
     needs: test

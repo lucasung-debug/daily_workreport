@@ -8,6 +8,8 @@ rem   사용법: scripts\install_from_source.bat [--no-launch] [--no-shortcut]
 rem   Python 을 직접 지정하려면: set WORKREPORT_PYTHON=C:\Program Files\Python311\python.exe
 rem ---------------------------------------------------------------------------
 
+rem shift 는 %0 도 밀어내므로 스크립트 위치를 먼저 기억한다
+set "SCRIPT_DIR=%~dp0"
 set "LAUNCH=1"
 set "SHORTCUT=1"
 :args
@@ -18,7 +20,7 @@ shift
 goto args
 :args_done
 
-cd /d "%~dp0.."
+cd /d "%SCRIPT_DIR%.."
 set "ROOT=%CD%"
 echo WorkReport 설치 폴더: %ROOT%
 echo.
