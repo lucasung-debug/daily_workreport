@@ -8,7 +8,7 @@ import sys
 from datetime import date
 from logging.handlers import RotatingFileHandler
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QLocale, QTimer
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -16,25 +16,13 @@ from . import APP_NAME, paths
 from .db import Database
 from .scheduler import DailyScheduler
 from .services import Services, SettingsStore
+from .ui import theme
 from .ui.common import Bridge, app_icon, run_async
 from .ui.main_window import MainWindow
+from .ui.onboarding import OnboardingDialog
 from .ui.tray import Tray
 
 log = logging.getLogger(__name__)
-
-ONBOARDING_TEXT = """\
-WorkReport 는 이 PC 에서 다음을 기록합니다.
-
-• 활성 창의 앱 이름·창 제목·사용 시간 (제외 목록에 있는 앱·키워드는 제목을 가립니다)
-• 회의 녹음 (Windows 녹음기 앱 저장 폴더 감시, 또는 앱의 ● 녹음 버튼)
-
-기록은 이 PC 의 SQLite DB 에만 저장됩니다. Claude API 키를 설정하면 업무일지 초안과 회의록 작성을 위해 \
-집계된 활동 요약과 회의 전사문이 Anthropic API 로 전송됩니다. 로컬 Whisper 를 쓰면 음성은 PC 밖으로 나가지 않습니다.
-
-회의를 녹음할 때는 반드시 참석자에게 녹음 사실을 알리고 동의를 받으세요.
-
-먼저 [설정] 탭에서 이름, 근무시간, Claude API 키를 입력하세요."""
-
 
 def setup_logging() -> None:
     handler = RotatingFileHandler(paths.log_dir() / "workreport.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8")
@@ -109,13 +97,23 @@ class Application:
         b.activity_changed.connect(self.window.today.schedule_refresh)
         b.notify.connect(self._on_pipeline_notify)
         b.meeting_detected.connect(self._on_meeting_detected)
-        b.recorder_error.connect(lambda msg: self.tray.notify("녹음 장치 오류", msg))
-        self.window.meetings.recording_changed.connect(lambda _rec: self.tray.refresh())
+        b.recorder_error.connect(self._on_recorder_error)
+        self.window.settings.theme_changed.connect(lambda mode: theme.apply_theme(self.qapp, mode))
+        self.window.meetings.open_settings.connect(self.open_ai_settings)
 
     # ------------------------------------------------------------
     def toggle_recording(self, title_hint: str = "") -> None:
-        self.window.meetings.toggle_recording(title_hint)
+        self.window.toggle_recording(title_hint)
         self.tray.refresh()
+
+    def open_ai_settings(self) -> None:
+        self.window.go("settings")
+        self.window.settings.show_page("ai")
+        self.window.bring_to_front()
+
+    def _on_recorder_error(self, message: str) -> None:
+        self.tray.notify("녹음 장치 오류", message)
+        self.window.show_status(message, "error")
 
     def _on_meeting_detected(self, title_hint: str) -> None:
         label = f"'{title_hint}' " if title_hint else ""
@@ -130,33 +128,30 @@ class Application:
 
     def auto_draft(self, day: str, manual: bool = False) -> None:
         def done(_report) -> None:
-            if self.window.report.day == day and not self.window.report._dirty:
-                self.window.report.load(day)
-            self.tray.notify("업무일지 초안이 준비되었습니다", f"{day} 초안을 확인하고 수정·확정하세요.", on_click=lambda: self.window.open_report(day))
+            self.window.report.reload_if_idle(day)
+            self.tray.notify("업무일지 초안이 준비되었어요", "확인하고 다듬은 뒤 확정하세요.", on_click=lambda: self.window.open_report(day))
 
         def failed(message: str) -> None:
-            self.tray.notify("업무일지 초안 생성 실패", message, on_click=lambda: self.window.open_report(day))
+            self.tray.notify("업무일지 초안을 만들지 못했어요", message, on_click=lambda: self.window.open_report(day))
 
         if manual:
-            self.window.open_report(day)
-            self.window.report.generate()
+            self.window.write_today_report()
             return
         run_async(self.services.generate_report_draft, day, on_done=done, on_error=failed)
 
     def show_onboarding_if_needed(self) -> None:
-        settings = self.services.store.get()
-        if not settings.onboarding_done:
-            QMessageBox.information(self.window if self.window.isVisible() else None, "WorkReport 시작하기", ONBOARDING_TEXT)
-            settings.onboarding_done = True
-            self.services.store.persist(settings)
+        if not self.services.store.get().onboarding_done:
+            OnboardingDialog(self.services.store, self.window if self.window.isVisible() else None).exec()
+            self.window.settings.load()
+            self.window.today.refresh()
 
     def quit(self) -> None:
         if self.services.recorder.is_recording:
             answer = QMessageBox.question(None, "종료", "회의를 녹음 중입니다. 녹음을 저장하고 종료할까요?")
             if answer != QMessageBox.Yes:
                 return
-        if not self.window.report.confirm_discard():
-            return
+        self.window.report.flush()
+        self.window.meetings.flush()
         self.window.quitting = True
         self.timer.stop()
         self.tray.hide()
@@ -171,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     qapp.setApplicationName(APP_NAME)
     qapp.setQuitOnLastWindowClosed(False)
     qapp.setWindowIcon(app_icon())
+    QLocale.setDefault(QLocale(QLocale.Korean, QLocale.SouthKorea))
 
     if _notify_running_instance():
         return 0
@@ -179,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     server.listen(_server_name())
 
     store = SettingsStore()
+    theme.setup_application(qapp, store.get().theme)
     db = Database(paths.db_path())
     services = Services(store, db)
     app = Application(qapp, services, start_minimized="--minimized" in argv)

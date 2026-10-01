@@ -33,6 +33,7 @@ class Settings(BaseModel):
     auto_draft_enabled: bool = True
     track_outside_work_hours: bool = False
     autostart: bool = False
+    theme: Literal["system", "light", "dark"] = "system"
 
     # 활동 수집
     poll_interval_sec: float = 2.0

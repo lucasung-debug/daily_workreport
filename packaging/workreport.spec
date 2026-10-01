@@ -15,8 +15,10 @@ hiddenimports = collect_submodules("workreport") + [
     "keyring.backends.Windows",
     "win32ctypes.core",
     "soundcard.mediafoundation",
+    "PySide6.QtSvg",
 ]
-datas = []
+# UI 자산(Pretendard 글꼴): 설치 여부와 상관없이 소스 폴더에서 직접 넣는다
+datas = [(str(ROOT / "src" / "workreport" / "ui" / "assets" / "fonts"), "workreport/ui/assets/fonts")]
 binaries = []
 
 try:  # 로컬 Whisper (선택 설치)
