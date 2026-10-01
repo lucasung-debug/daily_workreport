@@ -20,6 +20,7 @@ from .meeting.recorder import MeetingRecorder
 from .meeting.recorder_watch import RecorderFolderWatcher
 from .meeting.stt.base import Transcriber, create_transcriber
 from .models import DailyReport, Meeting
+from .todos import TodoService
 
 log = logging.getLogger(__name__)
 
@@ -72,9 +73,15 @@ class Services:
             on_detect=self._on_meeting_detected,
         )
         self.meeting_detected_listeners: list[Callable[[str], None]] = []
+        self.todos = TodoService(db)
+        self.pipeline.on_action_items = self.todos.notify
 
     # ------------------------------------------------------------ 수명
     def start(self) -> None:
+        try:
+            self.todos.sync_plans()
+        except Exception:
+            log.exception("전날 계획 가져오기 실패")
         self.tracker.start()
         self.screenshots.start()
         self.pipeline.start()

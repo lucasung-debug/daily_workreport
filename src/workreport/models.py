@@ -165,6 +165,23 @@ class ActionItem:
     due: str = ""
     is_mine: bool = False
     done: bool = False
+    done_at: float | None = None
+    id: int | None = None
+
+
+@dataclass
+class Todo:
+    """직접 추가했거나 전날 '명일 계획'에서 가져온 할 일. (회의 액션아이템은 action_items 에 있다)"""
+
+    title: str
+    due: str = ""  # YYYY-MM-DD 또는 ''
+    important: bool = False
+    source: str = "manual"  # manual | plan
+    source_ref: str = ""  # plan: '2026-09-30#1'
+    done: bool = False
+    done_at: float | None = None
+    deleted: bool = False
+    created_at: float = 0.0
     id: int | None = None
 
 

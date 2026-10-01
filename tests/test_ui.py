@@ -167,12 +167,163 @@ def test_report_todo_to_plan(qapp, services, tmp_path):
 
     meeting = services.import_audio(write_wav(tmp_path / "주간회의.wav", tone(1)))
     services.pipeline.process(meeting.id)
+    services.todos.add("주간 보고 정리")
     editor = ReportEditor(services)
     editor.reload_side()
-    assert editor.todo_box.count() == 2  # 홍길동(본인) + '나' 담당
-    item, mt = services.db.open_my_action_items()[0]
-    editor._todo_to_plan(item.task, mt.title)
-    assert editor.plans.items()[-1].title == item.task
+    panel = editor.todo_panel
+    assert panel.compact and len(panel.rows) == 3  # 홍길동(본인) + '나' 담당 + 직접 추가
+    action = next(r.entry for r in panel.rows if r.entry.kind == "action")
+    panel.rows[[r.entry for r in panel.rows].index(action)].btn_plan.click()
+    added = editor.plans.items()[-1]
+    assert added.title == action.title and added.category == "액션아이템"
+    assert added.detail.startswith("회의 · ")
+    assert panel.caption_label.text() == "3개"
+    editor.flush()
+
+
+def test_dashboard_todo_panel(qapp, services):
+    from datetime import timedelta
+
+    from workreport.models import DailyReport
+    from workreport.ui.main_window import MainWindow
+
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    services.db.save_report(DailyReport(date=yesterday, plans=[ReportItem(title="API 문서 정리"), ReportItem(title="코드 리뷰")]))
+    win = MainWindow(services)
+    win.show()
+    win.go("today")
+    pump()
+    panel = win.today.todo_panel
+    body = win.today.findChild(type(panel)).parentWidget().layout()
+    assert body.indexOf(panel) == 1  # 인사 바로 아래, 지표 카드보다 위
+    assert panel.open_titles() == ["API 문서 정리", "코드 리뷰"]
+    assert panel.rows[0].source.text() == "어제 계획"
+    assert win.sidebar.today_badge.text() == "2" and not win.sidebar.today_badge.isHidden()
+
+    # 빠른 추가: 기한·중요
+    panel.input.setText("릴리스 공지 보내기")
+    panel.set_new_due(TODAY)
+    panel.btn_new_important.setChecked(True)
+    panel.input.returnPressed.emit()
+    assert panel.input.text() == "" and panel.new_due == "" and not panel.btn_new_important.isChecked()
+    assert panel.open_titles()[0] == "릴리스 공지 보내기"  # 오늘 기한 + 중요 → 맨 위
+    assert panel.rows[0].due_chip.text() == "오늘까지"
+    wait_until(lambda: win.sidebar.today_badge.text() == "3")
+
+    # 바로 편집
+    row = panel.rows[2]
+    row.title.setText("코드 리뷰 (PR 42)")
+    row.title.editingFinished.emit()
+    wait_until(lambda: "코드 리뷰 (PR 42)" in panel.open_titles())
+
+    # 완료 → 잠깐 뒤 '완료한 일'로 이동, 진행률 갱신
+    panel.rows[0].check.setChecked(True)
+    wait_until(lambda: "릴리스 공지 보내기" not in panel.open_titles())
+    assert panel.progress_label.text() == "1 / 3 완료" and panel.progress.value() == 1
+    assert panel.done_toggle.text() == "완료한 일 1개" and panel.done_titles() == []
+    panel.done_toggle.click()
+    assert panel.done_titles() == ["릴리스 공지 보내기"]
+    assert panel.done_rows[0].title.property("done") is True
+    wait_until(lambda: win.sidebar.today_badge.text() == "2")
+
+    # 삭제한 어제 계획은 다시 들어오지 않는다
+    plan_row = next(r for r in panel.rows if r.entry.title == "API 문서 정리")
+    plan_row.delete_requested.emit(plan_row.entry)
+    wait_until(lambda: "API 문서 정리" not in panel.open_titles())
+    assert "지웠어요" in win.toast.message
+    win.go("today")
+    assert "API 문서 정리" not in panel.open_titles()
+
+    # 모두 끝내면 빈 상태
+    for title in list(panel.open_titles()):
+        row = next(r for r in panel.rows if r.entry.title == title)
+        row.check.setChecked(True)
+    wait_until(lambda: panel.open_titles() == [])
+    assert win.sidebar.today_badge.isHidden()
+    assert panel.caption_label.isHidden()
+    win.quitting = True
+    win.close()
+
+
+def test_todo_panel_more_and_order(qapp, services):
+    from workreport.ui.todo_view import MAX_OPEN, TodoPanel
+
+    for i in range(MAX_OPEN + 2):
+        services.todos.add(f"할 일 {i}")
+    panel = TodoPanel(services)
+    assert len(panel.rows) == MAX_OPEN and panel.more_btn.text() == "남은 할 일 2개 더 보기"
+    panel.more_btn.click()
+    assert len(panel.rows) == MAX_OPEN + 2 and panel.more_btn.text() == "접기"
+    last = panel.rows[-1]
+    last.important_toggled.emit(last.entry)
+    wait_until(lambda: panel.open_titles()[0] == f"할 일 {MAX_OPEN + 1}")
+    assert panel.rows[0].star.isChecked()
+
+
+def test_todo_action_items_stay_in_sync_with_meeting(qapp, services, tmp_path):
+    from workreport.ui.meeting_view import MeetingsView
+    from workreport.ui.todo_view import TodoPanel
+
+    meeting = services.import_audio(write_wav(tmp_path / "주간회의.wav", tone(1)))
+    services.pipeline.process(meeting.id)
+    panel = TodoPanel(services)
+    view = MeetingsView(services)
+    view.refresh_list()
+    view.select_meeting(meeting.id)
+    assert sorted(panel.open_titles()) == sorted(["배포 체크리스트", "릴리스 노트 작성"])
+    row = next(r for r in panel.rows if r.entry.title == "배포 체크리스트")
+    assert row.source.text().startswith("회의 · ") and row.title.isReadOnly()
+    assert not row.star.isEnabled() and row.hover_buttons == []
+
+    # 오늘 화면에서 체크 → 회의록의 체크도 바뀐다
+    row.check.setChecked(True)
+    meeting_row = next(r for r in view.detail.action_rows if r.task.text() == "배포 체크리스트")
+    wait_until(lambda: meeting_row.done.isChecked())
+    wait_until(lambda: "배포 체크리스트" not in panel.open_titles())
+    assert not view.save_timer.isActive()  # 맞추기만 하고 다시 저장하지 않는다
+
+    # 회의록에서 체크 해제 → 할 일 목록으로 돌아온다
+    meeting_row.done.setChecked(False)
+    wait_until(lambda: not view.save_timer.isActive())
+    wait_until(lambda: "배포 체크리스트" in panel.open_titles())
+
+    # 액션아이템은 할 일 목록에서 지울 수 없다
+    entry = next(r.entry for r in panel.rows if r.entry.kind == "action")
+    messages = []
+    panel.status_message.connect(lambda m, _k: messages.append(m))
+    panel._delete(entry)
+    assert messages and "회의록" in messages[-1]
+
+
+def test_due_helpers():
+    from workreport.todos import TodoEntry
+    from workreport.ui.todo_view import due_label, due_options, due_text
+
+    thursday, monday = date(2026, 10, 1), date(2026, 9, 28)
+    assert [v for _l, v in due_options(thursday)] == ["2026-10-01", "2026-10-02", "2026-10-05"]
+    assert [label.split()[0] for label, _v in due_options(monday)] == ["오늘", "내일", "이번", "다음"]
+    assert due_options(monday)[2][1] == "2026-10-02"
+    entry = TodoEntry(kind="manual", id=1, title="x")
+    assert due_text(entry, "2026-10-01") == ("", "")
+    for due, expected in [("2026-09-29", ("9/29 지남", "danger")), ("2026-10-01", ("오늘까지", "warning")), ("2026-10-02", ("내일까지", "accent")), ("2026-10-08", ("10/8까지", "neutral"))]:
+        entry.due = due
+        assert due_text(entry, "2026-10-01") == expected
+    assert due_label("", thursday) == "기한" and due_label("2026-10-02", thursday) == "내일" and due_label("2026-10-05", thursday) == "10/5 (월)"
+
+
+def test_tray_quick_todo(qapp, services, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    from workreport.ui.tray import Tray
+
+    tray = Tray(services, on_open=lambda: None, on_toggle_recording=lambda: None, on_generate=lambda: None, on_quit=lambda: None)
+    notes = []
+    tray.notify = lambda title, message, on_click=None: notes.append(title)
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("  보고서 검토 ", True)))
+    tray.quick_todo()
+    assert [e.title for e in services.todos.open_entries()] == ["보고서 검토"] and notes == ["할 일 추가"]
+    tray.timer.stop()
+    tray.hide()
 
 
 def test_meetings_view_flow(qapp, services, tmp_path):

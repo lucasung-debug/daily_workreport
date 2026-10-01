@@ -11,6 +11,7 @@ from ..config import Settings
 from ..db import Database, day_bounds
 from ..models import DailyReport, DailyReportDraft, ReportItem
 from ..report.render import date_label, format_duration, hm
+from ..todos import KIND_ACTION, TodoEntry, TodoService, _norm
 from .aggregate import DaySummary, summarize_day
 from .claude_client import ClaudeService
 from .prompts import DAILY_REPORT_SYSTEM
@@ -56,9 +57,13 @@ def build_daily_input(db: Database, day: str, settings: Settings, summary: DaySu
         else:
             out.append("- (회의록 미작성)")
 
-    open_items = db.open_my_action_items()
-    out.append("\n## 본인의 미완료 액션아이템")
-    out += [f"- {a.task}{f' (기한 {a.due})' if a.due else ''} — {m.title} ({m.date})" for a, m in open_items] or ["- 없음"]
+    todos = TodoService(db)
+    done = todos.completed_on(day)
+    out.append("\n## 오늘 완료한 할 일")
+    out += [f"- {datetime.fromtimestamp(e.done_at):%H:%M} {e.title} — {source_label(e)}" for e in done if e.done_at] or ["- 없음"]
+    remaining = todos.open_entries(day)
+    out.append("\n## 남은 할 일")
+    out += [f"- {'[중요] ' if e.important else ''}{e.title}{f' (기한 {e.due})' if e.due else ''} — {source_label(e)}" for e in remaining] or ["- 없음"]
 
     notes = db.notes_for(day)
     out.append("\n## 오늘 메모")
@@ -75,6 +80,10 @@ def build_daily_input(db: Database, day: str, settings: Settings, summary: DaySu
         out += [f"- {datetime.fromtimestamp(s.ts):%H:%M} {s.caption}" for s in shots]
 
     return "\n".join(out)
+
+
+def source_label(entry: TodoEntry) -> str:
+    return entry.subtitle or "직접 추가"
 
 
 def generate_draft(service: ClaudeService, db: Database, day: str, settings: Settings) -> DailyReportDraft:
@@ -95,6 +104,9 @@ def fallback_draft(db: Database, day: str, settings: Settings) -> DailyReportDra
             if sec >= FALLBACK_MIN_SEC:
                 titles = [t.title for t in summary.titles if t.category == cat][:3]
                 accomplishments.append(ReportItem(title=cat, detail="\n".join(titles), time_spent_min=round(sec / 60), category=cat))
+    todos = TodoService(db)
+    for e in todos.completed_on(day):
+        accomplishments.append(ReportItem(title=e.title, detail=source_label(e) if e.subtitle else "", category="할 일"))
     for t in summary.titles:
         if len(accomplishments) >= 8:
             break
@@ -102,10 +114,14 @@ def fallback_draft(db: Database, day: str, settings: Settings) -> DailyReportDra
             continue
         accomplishments.append(ReportItem(title=f"{t.title}", detail=t.app_name, time_spent_min=round(t.seconds / 60)))
 
-    plans = [
-        ReportItem(title=a.task, detail=f"{m.title}{f' · 기한 {a.due}' if a.due else ''}", category="액션아이템")
-        for a, m in db.open_my_action_items()
-    ]
+    plans: list[ReportItem] = []
+    seen: set[str] = set()
+    for e in todos.open_entries(day):
+        if _norm(e.title) in seen:
+            continue
+        seen.add(_norm(e.title))
+        detail = " · ".join(filter(None, [e.subtitle, f"기한 {e.due}" if e.due else ""]))
+        plans.append(ReportItem(title=e.title, detail=detail, category="액션아이템" if e.kind == KIND_ACTION else "할 일"))
     issues = [
         ReportItem(title=q, detail=m.title, category="회의 미결")
         for m in summary.meetings

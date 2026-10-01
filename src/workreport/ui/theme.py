@@ -233,12 +233,20 @@ QLabel[role="title"] {{ font-size: 24px; font-weight: 700; }}
 QLabel[role="subtitle"] {{ color: {t.text2}; font-size: 13px; }}
 QLabel[role="section"] {{ font-size: 15px; font-weight: 600; }}
 QLabel[role="caption"] {{ color: {t.text3}; font-size: 12px; }}
+QLabel[role="caption"][tone="danger"] {{ color: {t.danger}; }}
 QLabel[role="muted"] {{ color: {t.text2}; }}
 QLabel[role="stat"] {{ font-size: 24px; font-weight: 700; }}
 QLabel[role="statlabel"] {{ color: {t.text2}; font-size: 12px; font-weight: 500; }}
 QLabel[role="brand"] {{ font-size: 15px; font-weight: 700; }}
 QLabel[role="emptytitle"] {{ font-size: 16px; font-weight: 600; }}
 QLabel[role="link"] {{ color: {t.accent_text}; }}
+QLabel[badge="true"] {{ background: {t.accent}; color: {t.on_accent}; border-radius: 9px; padding: 0px 6px; font-size: 11px; font-weight: 700; min-width: 6px; }}
+QFrame#TodoRow {{ background: transparent; border-radius: 8px; }}
+QFrame#TodoRow:hover {{ background: {t.surface2}; }}
+QFrame#TodoAdd {{ background: {t.surface2}; border: 1px solid {t.border}; border-radius: 10px; }}
+QFrame#TodoAdd QLineEdit {{ background: transparent; border: none; padding: 6px 4px; }}
+QToolButton[variant="due"] {{ color: {t.text2}; padding: 4px 8px; font-size: 12px; font-weight: 500; }}
+QToolButton[variant="due"][set="true"] {{ color: {t.accent_text}; background: {t.accent_subtle}; }}
 
 QLabel[chip="neutral"] {{ background: {t.surface2}; color: {t.text2}; border: 1px solid {t.border}; border-radius: 10px; padding: 3px 9px; font-size: 12px; font-weight: 600; }}
 QLabel[chip="accent"] {{ background: {t.accent_subtle}; color: {t.accent_text}; border-radius: 10px; padding: 3px 9px; font-size: 12px; font-weight: 600; }}
@@ -311,6 +319,7 @@ QLineEdit[level="heading"] {{ font-size: 16px; font-weight: 600; }}
 QLineEdit[level="item"] {{ font-size: 14px; font-weight: 600; }}
 QLineEdit[tone="muted"], QPlainTextEdit[tone="muted"] {{ color: {t.text2}; }}
 QLineEdit[done="true"] {{ color: {t.text3}; text-decoration: line-through; }}
+QLineEdit[flat="true"][readOnly="true"]:hover, QLineEdit[flat="true"][readOnly="true"]:focus {{ background: transparent; border: 1px solid transparent; }}
 QSpinBox, QTimeEdit, QDateEdit {{ padding-right: 10px; }}
 QSpinBox::up-button, QSpinBox::down-button, QTimeEdit::up-button, QTimeEdit::down-button, QDateEdit::up-button, QDateEdit::down-button {{ width: 0; border: none; }}
 QDateEdit::drop-down {{ border: none; width: 22px; }}

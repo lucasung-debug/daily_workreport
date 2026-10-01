@@ -1,4 +1,4 @@
-"""오늘(대시보드): 인사·핵심 지표·하루 타임라인·앱별 사용 시간·오늘 회의·빠른 메모·최근 활동."""
+"""오늘(대시보드): 인사·오늘 할 일·핵심 지표·하루 타임라인·앱별 사용 시간·오늘 회의·빠른 메모·최근 활동."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from ..models import ActivitySession, Meeting, MeetingStatus
 from ..report.render import WEEKDAYS, format_duration, hm
 from ..services import Services
 from .theme import on_theme_change, tokens
+from .todo_view import TodoPanel
 from .widgets import (
     Card,
     Chip,
@@ -119,6 +120,9 @@ class DashboardView(QWidget):
         self.btn_draft = button("오늘 업무일지 쓰기", "primary", "sparkles", on_click=self.request_draft.emit)
         self.header.add_action(self.btn_draft)
 
+        self.todo_panel = TodoPanel(services)
+        self.todo_panel.status_message.connect(self.status_message.emit)
+
         self.stat_active = StatCard("PC 활동", "activity", "accent")
         self.stat_top = StatCard("가장 많이 쓴 앱", "monitor", "success")
         self.stat_meetings = StatCard("회의", "users", "meeting")
@@ -163,7 +167,7 @@ class DashboardView(QWidget):
         middle.setSpacing(14)
         middle.addWidget(self.usage_card, 3)
         middle.addLayout(right, 2)
-        layout = vbox(self.header, stats, self.timeline_card, middle, self.recent_card, None, spacing=16, margins=(32, 28, 32, 28))
+        layout = vbox(self.header, self.todo_panel, stats, self.timeline_card, middle, self.recent_card, None, spacing=16, margins=(32, 28, 32, 28))
         body.setLayout(layout)
 
         outer = QVBoxLayout(self)
@@ -200,6 +204,7 @@ class DashboardView(QWidget):
         if self.services.recorder.is_recording:
             state += " · 회의 녹음 중"
         self.header.title.setText(greeting(settings.user_name))
+        self.todo_panel.refresh()
         self.header.subtitle.setText(f"{korean_date(today)} · {state}")
 
         if summary.first_ts:

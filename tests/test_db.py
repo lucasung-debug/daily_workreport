@@ -20,7 +20,7 @@ def ts(day: str, hhmm: str) -> float:
 
 
 def test_migration_sets_version(db):
-    assert db.schema_version == 1
+    assert db.schema_version == 2
 
 
 def test_reopen_keeps_data(tmp_path):
@@ -30,7 +30,7 @@ def test_reopen_keeps_data(tmp_path):
     first.close()
     second = Database(path)
     assert [n.text for n in second.notes_for("2026-09-30")] == ["메모"]
-    assert second.schema_version == 1
+    assert second.schema_version == 2
     second.close()
 
 
@@ -92,3 +92,59 @@ def test_processed_files(db):
     assert not db.is_processed("C:/a.m4a")
     db.mark_processed("C:/a.m4a", 10, 1.0, None)
     assert db.is_processed("C:/a.m4a")
+
+
+def test_upgrade_v1_database_keeps_data(tmp_path):
+    import sqlite3
+
+    from workreport import db as dbmod
+
+    path = tmp_path / "v1.db"
+    conn = sqlite3.connect(path)
+    conn.executescript(dbmod._MIGRATIONS[0])
+    conn.execute("PRAGMA user_version = 1")
+    conn.execute("INSERT INTO meetings(date, title, started_at, ended_at, source, created_at, updated_at) VALUES ('2026-09-30','회의',1,2,'import',1,1)")
+    conn.execute("INSERT INTO action_items(meeting_id, task, is_mine, done) VALUES (1, '보고서', 1, 0)")
+    conn.commit()
+    conn.close()
+
+    upgraded = Database(path)
+    assert upgraded.schema_version == 2
+    items = upgraded.action_items_for(1)
+    assert [(i.task, i.done, i.done_at) for i in items] == [("보고서", False, None)]
+    upgraded.set_action_item_done(items[0].id, True)
+    assert upgraded.action_items_for(1)[0].done_at is not None
+    upgraded.close()
+
+
+def test_action_item_done_state_survives_rewrite(db):
+    mid = db.create_meeting(Meeting(date="2026-09-30", title="회의", started_at=1, ended_at=2, source="import", audio_path=""))
+    db.replace_action_items(mid, [ActionItem(meeting_id=mid, task="A", is_mine=True), ActionItem(meeting_id=mid, task="B", is_mine=True)])
+    a = db.action_items_for(mid)[0]
+    db.set_action_item_done(a.id, True)
+    done_at = db.action_items_for(mid)[0].done_at
+
+    # 회의록 재작성: 같은 할 일의 완료 상태와 완료 시각을 이어받는다
+    db.replace_action_items(mid, [ActionItem(meeting_id=mid, task="A", is_mine=True), ActionItem(meeting_id=mid, task="C", is_mine=True)], preserve_done=True)
+    rows = {i.task: i for i in db.action_items_for(mid)}
+    assert rows["A"].done and rows["A"].done_at == done_at and not rows["C"].done
+
+    # 사용자가 회의록에서 체크를 해제하면 그대로 반영한다
+    db.replace_action_items(mid, [ActionItem(meeting_id=mid, task="A", is_mine=True, done=False)])
+    assert not db.action_items_for(mid)[0].done and db.action_items_for(mid)[0].done_at is None
+    assert db.action_items_done_between(0, 2e10) == []
+
+
+def test_todo_crud(db):
+    from workreport.models import Todo
+
+    tid = db.add_todo(Todo(title="보고서 쓰기", due="2026-10-01"))
+    db.add_todo(Todo(title="어제 계획", source="plan", source_ref="2026-09-30#0"))
+    assert [t.title for t in db.open_todos()] == ["보고서 쓰기", "어제 계획"]
+    db.update_todo(tid, done=True, done_at=100.0, important=True)
+    assert db.get_todo(tid).done and db.get_todo(tid).important
+    assert [t.title for t in db.todos_done_between(0, 200)] == ["보고서 쓰기"]
+    assert db.todo_by_ref("2026-09-30#0").source == "plan"
+    db.update_todo(db.todo_by_ref("2026-09-30#0").id, deleted=True)
+    assert db.open_todos() == []
+    assert db.todo_by_ref("2026-09-30#0").deleted

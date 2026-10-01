@@ -30,6 +30,7 @@ from .meeting_view import MeetingsView
 from .report_editor import ReportEditor
 from .settings_view import SettingsView
 from .theme import font, on_theme_change, tokens
+from .todo_view import todo_signals
 from .widgets import ColorDot, ToastHost, ToggleSwitch, button, hbox, make_label, set_variant, vbox
 
 NAV = [
@@ -92,6 +93,18 @@ class Sidebar(QFrame):
             self.nav[key] = btn
             nav_layout.addWidget(btn)
 
+        # '오늘' 옆 남은 할 일 수
+        self.today_badge = make_label("", None)
+        self.today_badge.setProperty("badge", True)
+        self.today_badge.setAlignment(Qt.AlignCenter)
+        self.today_badge.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.today_badge.setFixedHeight(18)
+        self.today_badge.setMinimumWidth(18)
+        self.today_badge.setVisible(False)
+        badge_row = hbox(None, self.today_badge, margins=(0, 0, 10, 0))
+        badge_row.setAlignment(self.today_badge, Qt.AlignVCenter)
+        self.nav["today"].setLayout(badge_row)
+
         # 하단 상태 카드
         self.status = QFrame()
         self.status.setObjectName("SidebarStatus")
@@ -130,6 +143,11 @@ class Sidebar(QFrame):
 
     def set_current(self, key: str) -> None:
         self.nav[key].setChecked(True)
+
+    def set_todo_count(self, count: int) -> None:
+        self.today_badge.setText(str(count) if count < 100 else "99+")
+        self.today_badge.setVisible(count > 0)
+        self.nav["today"].setToolTip(f"남은 할 일 {count}개" if count else "")
 
     def refresh_state(self) -> None:
         t = tokens()
@@ -192,6 +210,9 @@ class MainWindow(QMainWindow):
         for view in (self.today, self.report, self.meetings, self.settings):
             view.status_message.connect(self.show_status)
 
+        todo_signals(services).changed.connect(self.refresh_todo_count)
+        self.refresh_todo_count()
+
         self.state_timer = QTimer(self)
         self.state_timer.setInterval(1000)
         self.state_timer.timeout.connect(self.refresh_recording_state)
@@ -206,6 +227,7 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.pages[key])
         self.sidebar.set_current(key)
         if key == "today":
+            self.sync_todos()
             self.today.refresh()
         elif key == "report":
             self.report.reload_side()
@@ -230,6 +252,17 @@ class MainWindow(QMainWindow):
         self.showNormal()
         self.raise_()
         self.activateWindow()
+
+    # ------------------------------------------------------------ 할 일
+    def refresh_todo_count(self) -> None:
+        self.sidebar.set_todo_count(self.services.todos.open_count())
+
+    def sync_todos(self) -> None:
+        """가장 최근 업무일지의 '명일 계획'을 할 일로 가져온다(이미 가져온 것은 건너뛴다)."""
+        try:
+            self.services.todos.sync_plans()
+        except Exception as exc:  # 가져오기 실패가 화면 전환을 막지 않게
+            self.show_status(f"어제 계획을 가져오지 못했어요: {exc}", "error")
 
     # ------------------------------------------------------------ 알림·녹음
     def show_status(self, message: str, kind: str = "info") -> None:

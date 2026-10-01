@@ -19,6 +19,7 @@ from workreport.models import (
     MeetingMinutes,
     ReportItem,
 )
+from workreport.todos import TodoService
 
 DAY = "2026-09-30"
 
@@ -133,7 +134,8 @@ def test_daily_input_contains_all_sources(db):
     assert "### 14:00~15:00 주간회의 (1시간)" in text
     assert "- 결정: 배포는 금요일" in text
     assert "액션아이템(본인): 릴리스 노트 작성 ~2026-10-02" in text
-    assert "## 본인의 미완료 액션아이템\n- 릴리스 노트 작성 (기한 2026-10-02) — 주간회의 (2026-09-30)" in text
+    assert "## 오늘 완료한 할 일\n- 없음" in text
+    assert "## 남은 할 일\n- 릴리스 노트 작성 (기한 2026-10-02) — 회의 · 주간회의" in text
     assert "16:00 오후에 QA팀 문의" in text
     assert "## 전날(2026-09-29) 명일 계획\n- 로그인 오류 분석" in text
 
@@ -155,6 +157,38 @@ def test_fallback_draft(db):
     assert "PROJ-12 로그인 오류 - Jira" in titles
     assert [p.title for p in d.plans] == ["릴리스 노트 작성"]
     assert [i.title for i in d.issues] == ["QA 인력 확보"]
+
+
+def seed_todos(db):
+    todos = TodoService(db, clock=lambda: ts("11:30"))
+    done = todos.add("배포 체크리스트 정리")
+    todos.set_done(done, True)
+    todos.add("QA팀 일정 확인", due="2026-10-01", important=True)
+    todos.add("릴리스 노트 작성")  # 회의 액션아이템과 같은 일
+    return todos
+
+
+def test_daily_input_lists_completed_and_remaining_todos(db):
+    seed(db)
+    seed_todos(db)
+    text = build_daily_input(db, DAY, Settings())
+    assert "## 오늘 완료한 할 일\n- 11:30 배포 체크리스트 정리 — 직접 추가" in text
+    remaining = text.split("## 남은 할 일\n")[1].split("\n\n")[0].splitlines()
+    assert remaining[0] == "- [중요] QA팀 일정 확인 (기한 2026-10-01) — 직접 추가"
+    assert "- 릴리스 노트 작성 (기한 2026-10-02) — 회의 · 주간회의" in remaining
+    assert "배포 체크리스트 정리" not in "\n".join(remaining)
+
+
+def test_fallback_draft_uses_todos(db):
+    seed(db)
+    seed_todos(db)
+    d = fallback_draft(db, DAY, Settings())
+    done = [a for a in d.accomplishments if a.category == "할 일"]
+    assert [a.title for a in done] == ["배포 체크리스트 정리"]
+    plans = [(p.title, p.category) for p in d.plans]
+    assert plans[0] == ("QA팀 일정 확인", "할 일")
+    assert [t for t, _ in plans].count("릴리스 노트 작성") == 1  # 같은 제목은 하나로
+    assert next(p for p in d.plans if p.category == "액션아이템").detail == "회의 · 주간회의 · 기한 2026-10-02"
 
 
 def test_apply_draft_keeps_memo():

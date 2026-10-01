@@ -72,7 +72,7 @@ class Application:
             services.store.get,
             services.db,
             on_auto_draft=self.auto_draft,
-            on_day_change=lambda _day: (self.window.today.refresh(), self.window.history.refresh()),
+            on_day_change=self._on_day_change,
             on_daily_cleanup=lambda: run_async(services.pipeline.cleanup_old_audio),
         )
         self.timer = QTimer()
@@ -102,6 +102,12 @@ class Application:
         self.window.meetings.open_settings.connect(self.open_ai_settings)
 
     # ------------------------------------------------------------
+    def _on_day_change(self, _day: str) -> None:
+        self.window.sync_todos()  # 어제 업무일지의 명일 계획 → 오늘 할 일
+        self.window.today.refresh()
+        self.window.history.refresh()
+        self.window.refresh_todo_count()
+
     def toggle_recording(self, title_hint: str = "") -> None:
         self.window.toggle_recording(title_hint)
         self.tray.refresh()

@@ -1,4 +1,4 @@
-"""시스템 트레이: 열기 / 회의 녹음 / 빠른 메모 / 기록 일시정지 / 초안 생성 / 종료."""
+"""시스템 트레이: 열기 / 회의 녹음 / 할 일 추가 / 빠른 메모 / 기록 일시정지 / 초안 생성 / 종료."""
 
 from __future__ import annotations
 
@@ -33,6 +33,8 @@ class Tray(QSystemTrayIcon):
         self.act_open.triggered.connect(on_open)
         self.act_record = QAction("● 회의 녹음 시작", menu)
         self.act_record.triggered.connect(on_toggle_recording)
+        self.act_todo = QAction("할 일 추가…", menu)
+        self.act_todo.triggered.connect(self.quick_todo)
         self.act_note = QAction("빠른 메모…", menu)
         self.act_note.triggered.connect(self.quick_note)
         self.act_pause = QAction("기록 일시정지", menu)
@@ -41,7 +43,7 @@ class Tray(QSystemTrayIcon):
         self.act_generate.triggered.connect(on_generate)
         self.act_quit = QAction("종료", menu)
         self.act_quit.triggered.connect(on_quit)
-        for act in (self.act_open, None, self.act_record, self.act_note, self.act_pause, self.act_generate, None, self.act_quit):
+        for act in (self.act_open, None, self.act_record, self.act_todo, self.act_note, self.act_pause, self.act_generate, None, self.act_quit):
             if act is None:
                 menu.addSeparator()
             else:
@@ -71,6 +73,12 @@ class Tray(QSystemTrayIcon):
     def toggle_pause(self) -> None:
         self.services.set_paused(not self.services.paused)
         self.refresh()
+
+    def quick_todo(self) -> None:
+        text, ok = QInputDialog.getText(None, "할 일 추가", "오늘 할 일 (오늘 화면 맨 위 목록에 들어가요)")
+        if ok and text.strip():
+            self.services.todos.add(text)
+            self.notify("할 일 추가", f"‘{text.strip()}’ 할 일을 추가했어요.")
 
     def quick_note(self) -> None:
         text, ok = QInputDialog.getMultiLineText(None, "빠른 메모", "오늘 업무일지 초안에 반영할 메모")

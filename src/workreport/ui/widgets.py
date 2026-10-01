@@ -36,6 +36,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from shiboken6 import isValid
+
 from .icons import bind_icon, render_pixmap
 from .theme import font, on_theme_change, qcolor, repolish, tokens
 
@@ -449,7 +451,7 @@ class AutoTextEdit(QPlainTextEdit):
 
     def event(self, e) -> bool:
         if e.type() in (QEvent.Polish, QEvent.StyleChange, QEvent.FontChange):
-            QTimer.singleShot(0, self._fit)
+            QTimer.singleShot(0, lambda: isValid(self) and self._fit())  # 그 사이 지워졌으면 건너뛴다
         return super().event(e)
 
     def _fit(self) -> None:

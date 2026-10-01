@@ -1,4 +1,4 @@
-"""업무일지: 날짜 이동, AI 초안, 항목 카드 편집(자동 저장), 확정, 복사·내보내기, 메모·내 할 일."""
+"""업무일지: 날짜 이동, AI 초안, 항목 카드 편집(자동 저장), 확정, 복사·내보내기, 메모·남은 할 일."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from pathlib import Path
 from PySide6.QtCore import QDate, QLocale, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QDateEdit,
     QFileDialog,
     QFrame,
@@ -26,12 +25,13 @@ from ..analysis.aggregate import summarize_day
 from ..models import DailyReport, ReportItem
 from ..report.render import format_duration, report_to_markdown, report_to_plaintext
 from ..services import Services
+from ..todos import KIND_ACTION, TodoEntry
 from .common import run_async
+from .todo_view import TodoPanel
 from .widgets import (
     AutoTextEdit,
     Card,
     Chip,
-    ElidedLabel,
     IconBadge,
     button,
     clear_layout,
@@ -281,10 +281,9 @@ class ReportEditor(QWidget):
         notes_card.body.addWidget(self.note_input)
         notes_card.body.addLayout(self.notes_box)
 
-        self.todo_box = QVBoxLayout()
-        self.todo_box.setSpacing(4)
-        self.todo_card = Card("내 할 일", "회의 액션아이템")
-        self.todo_card.body.addLayout(self.todo_box)
+        self.todo_panel = TodoPanel(services, compact=True)
+        self.todo_panel.plan_requested.connect(self._todo_to_plan)
+        self.todo_panel.status_message.connect(self.status_message.emit)
 
         self.memo = AutoTextEdit("보고서 하단에 들어갈 비고", min_lines=3, flat=False)
         self.memo.textChanged.connect(self._changed)
@@ -293,7 +292,7 @@ class ReportEditor(QWidget):
 
         right = QWidget()
         right.setFixedWidth(340)
-        right.setLayout(vbox(notes_card, self.todo_card, memo_card, None, spacing=14))
+        right.setLayout(vbox(notes_card, self.todo_panel, memo_card, None, spacing=14))
 
         body = QWidget()
         cols = QHBoxLayout()
@@ -342,7 +341,7 @@ class ReportEditor(QWidget):
 
     def reload_side(self) -> None:
         self._load_notes()
-        self._load_todos()
+        self.todo_panel.refresh()
 
     def _changed(self, *_args) -> None:
         if self._loading:
@@ -492,33 +491,9 @@ class ReportEditor(QWidget):
             row.setLayout(layout)
             self.notes_box.addWidget(row)
 
-    def _load_todos(self) -> None:
-        clear_layout(self.todo_box)
-        items = self.services.db.open_my_action_items()
-        self.todo_card.setVisible(True)
-        if not items:
-            self.todo_box.addWidget(make_label("남은 액션아이템이 없어요.", "caption"))
-        for item, meeting in items[:10]:
-            row = QWidget()
-            check = QCheckBox()
-            check.setToolTip("완료로 표시")
-            check.toggled.connect(lambda on, iid=item.id: self._todo_done(iid, on))
-            task = ElidedLabel(item.task)
-            caption = make_label(f"{meeting.title}" + (f" · ~{item.due}" if item.due else ""), "caption")
-            add = icon_button("plus", "명일 계획에 추가", lambda it=item, mt=meeting: self._todo_to_plan(it.task, mt.title), "text2", 16)
-            info = vbox(task, caption, spacing=0)
-            layout = hbox(check, info, add, spacing=8, margins=(0, 3, 0, 3))
-            layout.setStretch(1, 1)
-            row.setLayout(layout)
-            self.todo_box.addWidget(row)
-
-    def _todo_done(self, item_id: int, done: bool) -> None:
-        self.services.db.set_action_item_done(item_id, done)
-        self.status_message.emit("액션아이템을 완료로 표시했어요.", "success")
-        QTimer.singleShot(300, self._load_todos)
-
-    def _todo_to_plan(self, task: str, meeting_title: str) -> None:
-        self.plans.add_item(ReportItem(title=task, detail=f"{meeting_title} 액션아이템", category="액션아이템"))
+    def _todo_to_plan(self, entry: TodoEntry) -> None:
+        detail = " · ".join(filter(None, [entry.subtitle, f"기한 {entry.due}" if entry.due else ""]))
+        self.plans.add_item(ReportItem(title=entry.title, detail=detail, category="액션아이템" if entry.kind == KIND_ACTION else "할 일"))
         self.status_message.emit("명일 계획에 추가했어요.", "success")
 
     # ------------------------------------------------------------ 내보내기

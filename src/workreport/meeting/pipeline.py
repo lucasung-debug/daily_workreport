@@ -43,6 +43,7 @@ class MeetingPipeline:
         self._transcriber_factory = transcriber_factory
         self.notify = notify
         self.listeners: list[Callable[[int], None]] = []
+        self.on_action_items: Callable[[], None] | None = None  # 액션아이템이 바뀌면(할 일 목록 갱신)
         self._queue: queue.Queue[tuple[int, bool] | None] = queue.Queue()
         self._queued: set[int] = set()
         self._lock = threading.Lock()
@@ -150,8 +151,10 @@ class MeetingPipeline:
             fields = {"minutes": minutes, "status": MeetingStatus.DONE, "progress": 1.0, "error": ""}
             if minutes.title and _is_auto_title(meeting.title):
                 fields["title"] = minutes.title
-            self.db.replace_action_items(meeting_id, action_items_from(minutes, meeting_id, settings.user_name))
+            self.db.replace_action_items(meeting_id, action_items_from(minutes, meeting_id, settings.user_name), preserve_done=True)
             self._update(meeting_id, **fields)
+            if self.on_action_items:
+                self.on_action_items()
             self._notify(meeting_id, "회의록 준비 완료", f"{fields.get('title', meeting.title)} 회의록이 작성되었습니다.")
         except (STTError, ClaudeError) as exc:
             log.warning("회의 처리 실패 (id=%s): %s", meeting_id, exc)

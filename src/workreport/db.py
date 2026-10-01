@@ -25,6 +25,7 @@ from .models import (
     Note,
     ReportItem,
     Screenshot,
+    Todo,
     Transcript,
 )
 
@@ -111,6 +112,24 @@ _MIGRATIONS: list[str] = [
         mtime REAL NOT NULL,
         meeting_id INTEGER
     );
+    """,
+    # v2: 할 일
+    """
+    ALTER TABLE action_items ADD COLUMN done_at REAL;
+    CREATE TABLE todos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        due TEXT NOT NULL DEFAULT '',
+        important INTEGER NOT NULL DEFAULT 0,
+        source TEXT NOT NULL DEFAULT 'manual',
+        source_ref TEXT NOT NULL DEFAULT '',
+        done INTEGER NOT NULL DEFAULT 0,
+        done_at REAL,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        created_at REAL NOT NULL
+    );
+    CREATE UNIQUE INDEX idx_todos_ref ON todos(source_ref) WHERE source_ref != '';
+    CREATE INDEX idx_todos_open ON todos(done, deleted);
     """,
 ]
 
@@ -369,14 +388,31 @@ class Database:
         return [self._meeting_from(r) for r in rows]
 
     # ------------------------------------------------------------ action items
-    def replace_action_items(self, meeting_id: int, items: Iterable[ActionItem]) -> None:
+    def replace_action_items(self, meeting_id: int, items: Iterable[ActionItem], preserve_done: bool = False) -> None:
+        """회의의 액션아이템을 통째로 바꾼다.
+
+        preserve_done=True(회의록 재작성 등)면 같은 할 일의 완료 상태를 이어받는다.
+        완료 시각(done_at)은 계속 완료 상태인 항목이면 유지한다.
+        """
+        now = time.time()
         with self._lock, self._conn:
+            previous = {
+                r["task"]: (bool(r["done"]), r["done_at"])
+                for r in self._conn.execute("SELECT task, done, done_at FROM action_items WHERE meeting_id=?", (meeting_id,))
+            }
             self._conn.execute("DELETE FROM action_items WHERE meeting_id=?", (meeting_id,))
             for item in items:
                 item.meeting_id = meeting_id
+                was_done, was_at = previous.get(item.task, (False, None))
+                if preserve_done and was_done:
+                    item.done = True
+                if item.done:
+                    item.done_at = item.done_at or (was_at if was_done and was_at else now)
+                else:
+                    item.done_at = None
                 item.id = self._conn.execute(
-                    "INSERT INTO action_items(meeting_id, owner, task, due, is_mine, done) VALUES (?,?,?,?,?,?)",
-                    (meeting_id, item.owner, item.task, item.due, int(item.is_mine), int(item.done)),
+                    "INSERT INTO action_items(meeting_id, owner, task, due, is_mine, done, done_at) VALUES (?,?,?,?,?,?,?)",
+                    (meeting_id, item.owner, item.task, item.due, int(item.is_mine), int(item.done), item.done_at),
                 ).lastrowid
 
     @staticmethod
@@ -389,6 +425,7 @@ class Database:
             due=r["due"],
             is_mine=bool(r["is_mine"]),
             done=bool(r["done"]),
+            done_at=r["done_at"],
         )
 
     def action_items_for(self, meeting_id: int) -> list[ActionItem]:
@@ -408,7 +445,70 @@ class Database:
         return out
 
     def set_action_item_done(self, item_id: int, done: bool) -> None:
-        self._exec("UPDATE action_items SET done=? WHERE id=?", (int(done), item_id))
+        self._exec("UPDATE action_items SET done=?, done_at=? WHERE id=?", (int(done), time.time() if done else None, item_id))
+
+    def action_items_done_between(self, start_ts: float, end_ts: float) -> list[tuple[ActionItem, Meeting]]:
+        rows = self._all(
+            "SELECT * FROM action_items WHERE is_mine=1 AND done=1 AND done_at >= ? AND done_at < ? ORDER BY done_at",
+            (start_ts, end_ts),
+        )
+        out = []
+        for r in rows:
+            item = self._action_from(r)
+            meeting = self.get_meeting(item.meeting_id)
+            if meeting:
+                out.append((item, meeting))
+        return out
+
+    # ------------------------------------------------------------ todos
+    @staticmethod
+    def _todo_from(r: sqlite3.Row) -> Todo:
+        return Todo(
+            id=r["id"],
+            title=r["title"],
+            due=r["due"],
+            important=bool(r["important"]),
+            source=r["source"],
+            source_ref=r["source_ref"],
+            done=bool(r["done"]),
+            done_at=r["done_at"],
+            deleted=bool(r["deleted"]),
+            created_at=r["created_at"],
+        )
+
+    def add_todo(self, todo: Todo) -> int:
+        todo.created_at = todo.created_at or time.time()
+        todo.id = self._exec(
+            "INSERT INTO todos(title, due, important, source, source_ref, done, done_at, deleted, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (todo.title, todo.due, int(todo.important), todo.source, todo.source_ref, int(todo.done), todo.done_at, int(todo.deleted), todo.created_at),
+        ).lastrowid
+        return todo.id
+
+    _TODO_FIELDS = {"title", "due", "important", "done", "done_at", "deleted"}
+
+    def update_todo(self, todo_id: int, **fields) -> None:
+        if not fields:
+            return
+        unknown = set(fields) - self._TODO_FIELDS
+        if unknown:
+            raise KeyError(unknown)
+        values = [int(v) if isinstance(v, bool) else v for v in fields.values()]
+        self._exec(f"UPDATE todos SET {', '.join(f'{k}=?' for k in fields)} WHERE id=?", (*values, todo_id))
+
+    def get_todo(self, todo_id: int) -> Todo | None:
+        r = self._one("SELECT * FROM todos WHERE id=?", (todo_id,))
+        return self._todo_from(r) if r else None
+
+    def todo_by_ref(self, source_ref: str) -> Todo | None:
+        r = self._one("SELECT * FROM todos WHERE source_ref=?", (source_ref,))
+        return self._todo_from(r) if r else None
+
+    def open_todos(self) -> list[Todo]:
+        return [self._todo_from(r) for r in self._all("SELECT * FROM todos WHERE done=0 AND deleted=0 ORDER BY created_at, id")]
+
+    def todos_done_between(self, start_ts: float, end_ts: float) -> list[Todo]:
+        rows = self._all("SELECT * FROM todos WHERE done=1 AND deleted=0 AND done_at >= ? AND done_at < ? ORDER BY done_at", (start_ts, end_ts))
+        return [self._todo_from(r) for r in rows]
 
     # ------------------------------------------------------------ processed files
     def is_processed(self, path: str) -> bool:

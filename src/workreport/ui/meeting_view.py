@@ -41,6 +41,7 @@ from ..services import Services
 from .common import run_async
 from .icons import bind_icon, themed_icon
 from .theme import font, on_theme_change, repolish, tokens
+from .todo_view import todo_signals
 from .widgets import (
     discard,
     AutoTextEdit,
@@ -629,6 +630,7 @@ class MeetingsView(QWidget):
         self.refresh_record_button()
         self.refresh_list()
         self._show(None)
+        todo_signals(services).changed.connect(self.sync_action_done)
 
     # ------------------------------------------------------------ 녹음 버튼
     def refresh_record_button(self) -> None:
@@ -765,6 +767,19 @@ class MeetingsView(QWidget):
         d.saved_label.setText("")
         self._loading = False
 
+    def sync_action_done(self) -> None:
+        """오늘 화면에서 체크한 액션아이템의 완료 상태를 열려 있는 회의록에도 맞춘다."""
+        if self.current_id is None:
+            return
+        done = {a.task: a.done for a in self.services.db.action_items_for(self.current_id)}
+        for row in self.detail.action_rows:
+            task = row.task.text().strip()
+            if task in done and row.done.isChecked() != done[task]:
+                row.done.blockSignals(True)
+                row.done.setChecked(done[task])
+                row.done.blockSignals(False)
+                row._style_done()
+
     def _changed(self) -> None:
         if self._loading or self.current_id is None:
             return
@@ -802,6 +817,7 @@ class MeetingsView(QWidget):
             fields["error"] = ""
         self.services.db.update_meeting(self.current_id, **fields)
         self.services.db.replace_action_items(self.current_id, actions)
+        self.services.todos.notify()  # 오늘 할 일 목록도 새로 고친다
         updated = self.services.db.get_meeting(self.current_id)
         item = self._item_of(self.current_id)
         if item and updated:
@@ -864,6 +880,7 @@ class MeetingsView(QWidget):
             audio.unlink(missing_ok=True)
         self.services.db.delete_meeting(self.current_id)
         self.current_id = None
+        self.services.todos.notify()
         self.refresh_list()
         self._show(None)
         self.status_message.emit("회의를 삭제했어요.", "info")
