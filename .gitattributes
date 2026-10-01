@@ -1,0 +1,2 @@
+# 배치 파일은 CRLF 그대로 저장한다(LF 만 있으면 cmd 의 goto/call 레이블이 어긋날 수 있다)
+*.bat -text

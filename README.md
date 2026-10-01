@@ -14,8 +14,26 @@ PC 활동과 회의 녹음을 자동으로 기록하고, 퇴근 무렵 **금일 
 
 ## 설치와 실행
 
-### 방법 1. exe 실행
-GitHub Actions 의 `WorkReport-windows` 아티팩트(`WorkReport.exe`)를 내려받아 실행합니다. 직접 빌드하려면 [exe 빌드](#exe-빌드)를 보세요.
+### 방법 1. exe 실행 (권장)
+1. **[최신 빌드 받기 (WorkReport-windows.zip)](https://github.com/lucasung-debug/daily_workreport/releases/latest/download/WorkReport-windows.zip)** — GitHub 로그인 없이 받을 수 있습니다. 코드를 올릴 때마다 CI 가 자동으로 새로 만듭니다([릴리스 페이지](https://github.com/lucasung-debug/daily_workreport/releases/latest)).
+2. 압축을 풀고 `WorkReport.exe` 를 실행합니다. 처음 실행은 10~20초 걸릴 수 있습니다.
+3. **'Windows의 PC 보호'** 창이 뜨면 **추가 정보 → 실행** 을 누릅니다. 코드 서명이 없는 프로그램이라 처음 한 번 뜹니다.
+
+직접 빌드하려면 [exe 빌드](#exe-빌드)를 보세요.
+
+### 회사 PC에서 다운로드가 막힐 때
+회사 방화벽이나 보안 프로그램이 exe(또는 exe 가 든 zip) 다운로드를 막는 경우가 있습니다. 이때는 실행 파일 없이 소스로 설치합니다.
+
+1. **[소스 zip 받기](https://github.com/lucasung-debug/daily_workreport/archive/HEAD.zip)** (실행 파일이 없는 수 MB 크기) → 압축 풀기
+2. Python 3.11 이상이 없다면 [python.org](https://www.python.org/downloads/windows/) 에서 설치합니다. 설치 첫 화면에서 **Add python.exe to PATH** 를 체크하세요.
+3. 압축을 푼 폴더의 `scripts\install_from_source.bat` 을 더블클릭합니다.
+   - 가상환경 만들기 → 설치 → 바탕화면 **WorkReport** 바로 가기 → 실행까지 자동으로 합니다.
+   - 다음부터는 바탕화면 바로 가기로 실행합니다.
+   - 패키지 설치가 실패하면 회사 프록시 때문일 수 있습니다. 화면 안내대로 `HTTPS_PROXY` 를 설정한 뒤 다시 실행하세요.
+
+그래도 막히면 IT 팀에 다음 주소의 허용을 요청하세요.
+- exe 받기: `github.com`, `release-assets.githubusercontent.com`, `objects.githubusercontent.com`
+- 소스 설치: `codeload.github.com`, `pypi.org`, `files.pythonhosted.org`
 
 ### 방법 2. Python 소스 실행
 Python 3.11 이상이 필요합니다.
@@ -143,7 +161,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_exe.ps1 -OneDir    # dist
 powershell -ExecutionPolicy Bypass -File scripts\build_exe.ps1 -NoWhisper # 로컬 Whisper 제외 (용량↓)
 ```
 
-push 할 때마다 GitHub Actions 가 Windows·Linux 테스트, exe 빌드, 실행 스모크 테스트를 돌리고 `WorkReport-windows` 아티팩트를 올립니다.
+push 할 때마다 GitHub Actions 가 Windows·Linux 테스트(소스 설치 배치 파일 포함), exe 빌드, 실행 스모크 테스트를 돌립니다. 기본 브랜치의 빌드는 [최신 빌드 릴리스](https://github.com/lucasung-debug/daily_workreport/releases/latest)에 `WorkReport-windows.zip` 으로 자동 게시됩니다.
 
 ## 개발
 

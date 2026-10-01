@@ -29,6 +29,14 @@ jobs:
         run: ruff check src tests --select F,E9
       - name: 테스트
         run: python -m pytest -q
+      - name: 소스 설치 배치 파일 (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        env:
+          WORKREPORT_PYTHON: python
+        run: |
+          call scripts\install_from_source.bat --no-launch --no-shortcut || exit /b 1
+          .venv\Scripts\python.exe -c "import workreport, PySide6, faster_whisper; print('workreport', workreport.__version__)" || exit /b 1
 
   build-exe:
     needs: test
@@ -59,3 +67,49 @@ jobs:
           name: WorkReport-windows
           path: dist/WorkReport.exe
           if-no-files-found: error
+
+  # 기본 브랜치에 올라온 빌드를 로그인 없이 받을 수 있는 고정 링크로 게시한다.
+  #   https://github.com/<저장소>/releases/latest/download/WorkReport-windows.zip
+  release:
+    needs: build-exe
+    if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: WorkReport-windows
+          path: dist
+      - name: 배포 파일 만들기
+        run: |
+          short=${GITHUB_SHA::7}
+          built=$(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M')
+          printf '%s\r\n' \
+            "WorkReport 최신 빌드 (커밋 $short, $built KST)" \
+            "" \
+            "1. 이 zip 의 압축을 풉니다." \
+            "2. WorkReport.exe 를 실행합니다. 처음 실행은 10~20초 걸릴 수 있어요." \
+            "3. 'Windows의 PC 보호' 창이 뜨면 [추가 정보] 를 누른 뒤 [실행] 을 누릅니다." \
+            "   (코드 서명이 없는 프로그램이라 처음 한 번 뜹니다.)" \
+            "" \
+            "회사 보안 때문에 exe 가 막히면 소스 설치 방법을 쓰세요:" \
+            "https://github.com/$GITHUB_REPOSITORY#회사-pc에서-다운로드가-막힐-때" > dist/README.txt
+          cd dist && zip -9 -q ../WorkReport-windows.zip WorkReport.exe README.txt && cd ..
+          unzip -l WorkReport-windows.zip
+          echo "SHORT=$short" >> "$GITHUB_ENV"
+          echo "BUILT=$built" >> "$GITHUB_ENV"
+      - name: 릴리스 게시 (latest-build)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete latest-build --cleanup-tag --yes || true
+          gh release create latest-build WorkReport-windows.zip \
+            --target "$GITHUB_SHA" \
+            --title "WorkReport 최신 빌드 ($SHORT)" \
+            --latest \
+            --notes "커밋 $SHORT · $BUILT KST 빌드. **WorkReport-windows.zip** 을 받아 압축을 풀고 WorkReport.exe 를 실행하세요. 'Windows의 PC 보호' 창이 뜨면 [추가 정보] → [실행]. 회사 보안으로 막히면 README 의 '회사 PC에서 다운로드가 막힐 때' 를 보세요."
