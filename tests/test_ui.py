@@ -75,8 +75,8 @@ def services(db, tmp_path):
         claude_configured=lambda: True,
         recorder_backend=FakeBackend(),
     )
-    now = datetime.now().timestamp()
-    db.insert_session(ActivitySession(now - 3600, now - 600, "Visual Studio Code", "auth.py - backend - Visual Studio Code"))
+    nine = datetime.combine(date.today(), datetime.min.time()).timestamp() + 9 * 3600  # 오늘 09:00 (자정 무관)
+    db.insert_session(ActivitySession(nine, nine + 3000, "Visual Studio Code", "auth.py - backend - Visual Studio Code"))
     return svc
 
 

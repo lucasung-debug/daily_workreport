@@ -195,6 +195,9 @@ class ReportEditor(QWidget):
         self._dirty = False
         self._update_state_label()
 
+    def reload_notes(self) -> None:
+        self._load_notes()
+
     def _load_notes(self) -> None:
         self.notes.clear()
         for note in self.services.db.notes_for(self.day):

@@ -71,7 +71,7 @@ class TodayView(QWidget):
         self._pending = False
         self.timer = QTimer(self)
         self.timer.setInterval(15_000)
-        self.timer.timeout.connect(self.refresh)
+        self.timer.timeout.connect(lambda: self.refresh() if self.isVisible() else None)
         self.timer.start()
         self.refresh()
 

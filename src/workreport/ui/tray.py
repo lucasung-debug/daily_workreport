@@ -26,6 +26,7 @@ class Tray(QSystemTrayIcon):
         super().__init__(app_icon(), parent)
         self.services = services
         self._message_click: Callable[[], None] | None = None
+        self._icon_state: tuple[bool, bool] | None = None
 
         menu = QMenu()
         self.act_open = QAction("WorkReport 열기", menu)
@@ -59,7 +60,9 @@ class Tray(QSystemTrayIcon):
     def refresh(self) -> None:
         recording = self.services.recorder.is_recording
         paused = self.services.paused
-        self.setIcon(app_icon(recording=recording, paused=paused))
+        if self._icon_state != (recording, paused):  # 상태가 바뀔 때만 다시 그린다(깜빡임 방지)
+            self._icon_state = (recording, paused)
+            self.setIcon(app_icon(recording=recording, paused=paused))
         self.act_record.setText(f"■ 회의 녹음 중지 ({format_hms(self.services.recorder.elapsed())})" if recording else "● 회의 녹음 시작")
         self.act_pause.setText("기록 다시 시작" if paused else "기록 일시정지")
         state = "회의 녹음 중" if recording else ("기록 일시정지" if paused else "활동 기록 중")

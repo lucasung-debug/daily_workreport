@@ -66,6 +66,8 @@ class MainWindow(QMainWindow):
     def _on_tab(self, index: int) -> None:
         if index == self.TAB_TODAY:
             self.today.refresh()
+        elif index == self.TAB_REPORT:
+            self.report.reload_notes()
         elif index == self.TAB_HISTORY:
             self.history.refresh()
 
